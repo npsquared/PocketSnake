@@ -259,6 +259,14 @@
   const CRITTER_LIFE = 40;               // moves
   const FOODS_PER_CRITTER = 5;
 
+  // Game modes. RAMP and CAMPAIGN speed up one notch every RAMP_EVERY foods;
+  // CAMPAIGN also moves on to the next maze at each notch.
+  const MODES = ['CLASSIC', 'RAMP', 'CAMPAIGN'];
+  const RAMP_EVERY = 10;                 // foods per speed notch / campaign stage
+  const RAMP_FACTOR = 0.9;               // each notch makes a move 10% quicker
+  const MIN_TICK = 45;                   // fastest a move can get (ms)
+  const STAGE_PAUSE = 1800;              // ms the "STAGE n" card stays up
+
   // directions: 0 right, 1 down, 2 left, 3 up
   const DX = [1, 0, -1, 0];
   const DY = [0, 1, 0, -1];
@@ -282,7 +290,8 @@
     '6': '011 100 111 101 111', '7': '111 001 010 010 010', '8': '111 101 111 101 111',
     '9': '111 101 111 001 110', ' ': '00 00 00 00 00', '!': '1 1 1 0 1', '.': '0 0 0 0 1',
     ':': '0 1 0 1 0', '-': '000 000 111 000 000', '<': '001 010 100 010 001',
-    '>': '100 010 001 010 100', '?': '110 001 010 000 010', '/': '001 001 010 100 100'
+    '>': '100 010 001 010 100', '?': '110 001 010 000 010', '/': '001 001 010 100 100',
+    '+': '000 010 111 010 000'
   };
   const FONT = {};
   for (const k in FONT_SRC) FONT[k] = FONT_SRC[k].split(' ');
@@ -368,7 +377,7 @@
   // ---------------------------------------------------------------------------
   const STORE_KEY = 'pocket-snake-v1';
   const MAX_SCORES = 10;
-  const settings = { level: 5, maze: 1, sound: true };
+  const settings = { level: 5, maze: 1, mode: 0, sound: true };
   let localScores = [];          // high scores kept in this browser
   let initials = 'AAA';          // initials last entered on this device
 
@@ -380,7 +389,8 @@
     if (!name || !(score > 0) || score > 1e7) return null;
     const level = Math.min(9, Math.max(1, Math.floor(Number(e.level)) || 1));
     const maze = Math.min(MAZES.length - 1, Math.max(0, Math.floor(Number(e.maze)) || 0));
-    return { name, score, level, maze, at: Number(e.at) || 0 };
+    const mode = Math.min(MODES.length - 1, Math.max(0, Math.floor(Number(e.mode)) || 0));
+    return { name, score, level, maze, mode, at: Number(e.at) || 0 };
   }
 
   try {
@@ -388,6 +398,7 @@
     if (saved) {
       if (saved.level >= 1 && saved.level <= 9) settings.level = saved.level | 0;
       if (saved.maze >= 0 && saved.maze < MAZES.length) settings.maze = saved.maze | 0;
+      if (saved.mode >= 0 && saved.mode < MODES.length) settings.mode = saved.mode | 0;
       if (typeof saved.sound === 'boolean') settings.sound = saved.sound;
       if (Array.isArray(saved.scores)) localScores = saved.scores.map(cleanEntry).filter(Boolean).slice(0, MAX_SCORES);
       if (typeof saved.initials === 'string' && /^[A-Z]{3}$/.test(saved.initials)) initials = saved.initials;
@@ -493,7 +504,9 @@
     spawn: () => { tone(1568, 0.03, 0, 0.03); tone(1568, 0.03, 0.06, 0.03); },
     bonus: () => { tone(784, 0.06); tone(1175, 0.06, 0.07); tone(1568, 0.1, 0.14); },
     die:   () => tone(520, 0.6, 0, 0.06, 70),
-    start: () => { tone(523, 0.06); tone(659, 0.06, 0.07); tone(784, 0.11, 0.14); }
+    start: () => { tone(523, 0.06); tone(659, 0.06, 0.07); tone(784, 0.11, 0.14); },
+    faster: () => { tone(880, 0.05); tone(1175, 0.05, 0.06); tone(1760, 0.08, 0.12); },
+    stage: () => { tone(659, 0.08); tone(784, 0.08, 0.1); tone(1046, 0.08, 0.2); tone(1568, 0.16, 0.3); }
   };
 
   // ---------------------------------------------------------------------------
@@ -570,7 +583,7 @@
       availH = vh - chrome;
     }
     // Pick the board shape only when no game is on the board.
-    const active = state === 'playing' || state === 'paused' || state === 'dying';
+    const active = state === 'playing' || state === 'paused' || state === 'stage' || state === 'dying';
     if (!active) {
       let cols = 24, rows = 13;
       if (!landscape && vh > vw * 1.15 && vw < 700) {
@@ -616,7 +629,7 @@
   // ---------------------------------------------------------------------------
   // Game state
   // ---------------------------------------------------------------------------
-  let state = 'menu';          // menu | playing | paused | dying | over
+  let state = 'menu';          // menu | playing | paused | stage | dying | over
   let menuSel = 0;
   let overSel = 0;
   let stateT = 0;              // ms spent in current state
@@ -625,6 +638,9 @@
   let food = null, critter = null;
   let score = 0, eaten = 0, acc = 0;
   let newBest = false, won = false;
+  let notch = 0;               // speed notches gained this game (RAMP / CAMPAIGN)
+  let curMaze = 0;             // maze on the board now (moves on in CAMPAIGN)
+  let notchFlash = 0;          // ms left to blink the speed readout
 
   function setState(s) {
     state = s; stateT = 0;
@@ -659,20 +675,50 @@
     sfx.spawn();
   }
 
-  function newGame() {
-    layout();
-    walls = buildMaze(settings.maze);
+  // Fresh snake on maze m (used at the start and at each campaign stage).
+  function setupBoard(m) {
+    curMaze = m;
+    walls = buildMaze(m);
     snake = [];
     const sy = Math.floor(ROWS / 2);
     for (let i = 0; i < START_LEN; i++) snake.push({ x: 9 - i, y: sy, full: false });
     dir = 0;
     queue = [];
-    score = 0; eaten = 0; acc = 0;
+    acc = 0;
     critter = null;
-    newBest = false; won = false;
+    food = null;
     placeFood();
+  }
+
+  function newGame() {
+    layout();
+    score = 0; eaten = 0; notch = 0; notchFlash = 0;
+    newBest = false; won = false;
+    setupBoard(settings.maze);
     setState('playing');
     sfx.start();
+  }
+
+  // Current move length: the level's speed, quickened by any ramp notches.
+  function tickMs() {
+    const base = SPEED[settings.level];
+    if (!notch) return base;
+    return Math.max(Math.min(base, MIN_TICK), Math.round(base * Math.pow(RAMP_FACTOR, notch)));
+  }
+
+  // Called after each food in RAMP / CAMPAIGN.
+  function maybeRamp() {
+    if (settings.mode === 0 || eaten % RAMP_EVERY !== 0) return false;
+    notch++;
+    if (settings.mode === 2) {
+      setupBoard((curMaze + 1) % MAZES.length);
+      setState('stage');
+      sfx.stage();
+      return true;
+    }
+    notchFlash = 1500;
+    sfx.faster();
+    return false;
   }
 
   function turn(d) {
@@ -705,9 +751,10 @@
       sfx.bonus();
     }
     if (ateFood) {
-      score += settings.level;
+      score += settings.level + notch;   // faster snake, more points
       eaten++;
       sfx.eat();
+      if (maybeRamp()) return;           // campaign: on to the next maze
       if (!placeFood()) { won = true; return die(true); }
       if (eaten % FOODS_PER_CRITTER === 0 && !critter) spawnCritter();
     }
@@ -740,7 +787,7 @@
   function submitEntry() {
     initials = entryName.join('');
     save();
-    saveScore({ name: initials, score, level: settings.level, maze: settings.maze, at: Date.now() });
+    saveScore({ name: initials, score, level: settings.level, maze: settings.maze, mode: settings.mode, at: Date.now() });
     sfx.start();
     setState('over');
   }
@@ -766,7 +813,7 @@
   }
   led.classList.toggle('on', settings.sound);
 
-  const MENU_ITEMS = ['START', 'LEVEL', 'MAZE', 'SCORES', 'SOUND'];
+  const MENU_ITEMS = ['START', 'MODE', 'LEVEL', 'MAZE', 'SCORES', 'SOUND'];
 
   function menuInput(a) {
     if (a === 'up' || a === 'down') {
@@ -778,10 +825,11 @@
     if (!delta) return;
     switch (menuSel) {
       case 0: if (a === 'ok') newGame(); break;
-      case 1: settings.level = ((settings.level - 1 + delta + 9) % 9) + 1; save(); sfx.move(); break;
-      case 2: settings.maze = (settings.maze + delta + MAZES.length) % MAZES.length; save(); sfx.move(); break;
-      case 3: if (a === 'ok' || a === 'right') { setState('scores'); sfx.move(); } break;
-      case 4: setSound(!settings.sound); break;
+      case 1: settings.mode = (settings.mode + delta + MODES.length) % MODES.length; save(); sfx.move(); break;
+      case 2: settings.level = ((settings.level - 1 + delta + 9) % 9) + 1; save(); sfx.move(); break;
+      case 3: settings.maze = (settings.maze + delta + MAZES.length) % MAZES.length; save(); sfx.move(); break;
+      case 4: if (a === 'ok' || a === 'right') { setState('scores'); sfx.move(); } break;
+      case 5: setSound(!settings.sound); break;
     }
   }
 
@@ -997,6 +1045,12 @@
 
   function drawStatus(t) {
     text(pad(score), 1, 1);
+    if (settings.mode !== 0) {
+      // Speed readout: SPD 1, 2, 3... (campaign shows the stage instead)
+      const label = settings.mode === 2 ? 'STG ' + (notch + 1) : 'SPD ' + (notch + 1);
+      const blink = notchFlash > 0 && Math.floor(t / 120) % 2 === 1;
+      if (!blink) text(label, Math.floor((W - measure(label)) / 2) - (critter ? 6 : 0), 1);
+    }
     if (critter) {
       const remain = pad(Math.ceil(critter.life / 2), 2);
       const tw = measure(remain);
@@ -1018,6 +1072,17 @@
     const hidden = state === 'dying' && Math.floor(stateT / 170) % 2 === 1;
     if (!hidden) drawSnake();
 
+    if (state === 'stage') {
+      const name = MAZES[curMaze].name;
+      const bw = Math.max(54, measure(name) + 12), bh = 24;
+      const bx = Math.floor((W - bw) / 2), by = Math.floor(OY + (ROWS * CELL - bh) / 2);
+      rect(bx - 2, by - 2, bw + 4, bh + 4, 0);
+      box(bx, by, bw, bh);
+      box(bx + 2, by + 2, bw - 4, bh - 4);
+      center('STAGE ' + (notch + 1), by + 5);
+      center(name, by + 13);
+    }
+
     if (state === 'paused') {
       const bw = 54, bh = 17;
       const bx = Math.floor((W - bw) / 2), by = Math.floor(OY + (ROWS * CELL - bh) / 2);
@@ -1038,9 +1103,9 @@
     bmp(CRITTERS[frameN], tx - 15, 6 + oy);
     bmp(CRITTERS[(frameN + 2) % CRITTERS.length], tx + titleW + 6, 6 + oy);
 
-    const values = ['', String(settings.level), MAZES[settings.maze].name, '', settings.sound ? 'ON' : 'OFF'];
+    const values = ['', MODES[settings.mode], String(settings.level), MAZES[settings.maze].name, '', settings.sound ? 'ON' : 'OFF'];
     for (let i = 0; i < MENU_ITEMS.length; i++) {
-      const y = 20 + i * 9 + oy;
+      const y = 19 + i * 8 + oy;
       const sel = i === menuSel;
       if (sel) rect(4, y - 2, W - 8, 9, 1);
       const v = sel ? 0 : 1;
@@ -1052,8 +1117,8 @@
         text('>', W - 8 - measure('>'), y, v);
       }
     }
-    rect(4, 64 + oy, W - 8, 1, 1);
-    center(bestLine(), 68 + oy);
+    rect(4, 67 + oy, W - 8, 1, 1);
+    center(bestLine(), 70 + oy);
   }
 
   function bestLine() {
@@ -1093,7 +1158,10 @@
       const rank = String(i + 1);
       text(rank, 14 - measure(rank), y);
       text(e.name, 18, y);
-      if (W > 100) text('L' + e.level + ' ' + MAZES[e.maze].name, 40, y);
+      if (W > 100) {
+        const where = e.mode === 2 ? 'CAMPAIGN' : MAZES[e.maze].name + (e.mode === 1 ? '+' : '');
+        text('L' + e.level + ' ' + where, 40, y);
+      }
       const s = pad(e.score);
       text(s, W - 6 - measure(s), y);
     });
@@ -1127,8 +1195,11 @@
 
     if (state === 'playing') {
       acc += dt;
-      const iv = SPEED[settings.level];
-      while (acc >= iv && state === 'playing') { acc -= iv; step(); }
+      if (notchFlash > 0) notchFlash -= dt;
+      while (state === 'playing' && acc >= tickMs()) { acc -= tickMs(); step(); }
+    } else if (state === 'stage' && stateT > STAGE_PAUSE) {
+      setState('playing');
+      acc = 0;
     } else if (state === 'dying' && stateT > 1400) {
       finishGame();
     }
