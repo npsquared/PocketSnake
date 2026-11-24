@@ -1,0 +1,1150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d2226">
+<title>Pocket Snake</title>
+<style>
+  :root {
+    --page: #1b2024;
+    --page-glow: #2b343a;
+    --shell-hi: #56626c;
+    --shell: #3d464e;
+    --shell-lo: #252b30;
+    --bezel: #14181b;
+    --lcd: #c7f0d8;
+    --ink: #43523d;
+    --btn-hi: #7a8691;
+    --btn: #5a6570;
+    --btn-lo: #333b42;
+    --btn-text: #e3e9ed;
+    --label: #8e9ba5;
+    --led-on: #9dff7a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(ellipse at 50% 30%, var(--page-glow), var(--page) 70%) fixed, var(--page);
+    color: var(--label);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    min-height: 100%;
+    padding: 16px;
+    overflow-x: hidden;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .device {
+    background: linear-gradient(160deg, var(--shell-hi), var(--shell) 38%, var(--shell-lo));
+    border-radius: 30px;
+    padding: 18px 18px 24px;
+    box-shadow:
+      0 30px 60px rgba(0,0,0,.55),
+      0 2px 0 rgba(255,255,255,.12) inset,
+      0 -3px 0 rgba(0,0,0,.35) inset;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    max-width: 100%;
+  }
+  .bezel {
+    background: var(--bezel);
+    border-radius: 16px;
+    padding: 14px 14px 10px;
+    box-shadow: inset 0 3px 8px rgba(0,0,0,.7), 0 1px 0 rgba(255,255,255,.08);
+  }
+  .screen {
+    position: relative;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--lcd);
+    touch-action: none;
+    cursor: pointer;
+  }
+  .screen canvas { display: block; }
+  .screen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(125deg, rgba(255,255,255,.22), rgba(255,255,255,0) 42%),
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.14));
+    box-shadow: inset 0 0 14px rgba(0,0,0,.28);
+  }
+  .brand {
+    margin-top: 9px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .38em;
+    text-transform: uppercase;
+    color: #6f7b84;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  /* The whole square is one touch target: a touch anywhere in it counts as
+     the nearest direction, so near-misses between buttons still register. */
+  .dpad {
+    --k: clamp(54px, min(18vw, 9.5vh), 74px);
+    display: grid;
+    grid-template-columns: repeat(3, var(--k));
+    grid-template-rows: repeat(3, var(--k));
+    gap: 5px;
+    padding: 6px;
+    /* no border-radius: it would make the touch area round */
+    background: radial-gradient(circle closest-side, rgba(0,0,0,.30), rgba(0,0,0,.14) 78%, rgba(0,0,0,0) 100%);
+    touch-action: none;
+    cursor: pointer;
+  }
+  .dpad .btn { pointer-events: none; }
+  .btn {
+    appearance: none;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    color: var(--btn-text);
+    background: linear-gradient(170deg, var(--btn-hi), var(--btn) 45%, var(--btn-lo));
+    box-shadow: 0 4px 0 #1c2125, 0 6px 10px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.25);
+    border-radius: 14px;
+    font: 700 12px/1 inherit;
+    font-family: inherit;
+    letter-spacing: .08em;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    touch-action: manipulation;
+    transition: transform .05s, box-shadow .05s;
+  }
+  .btn svg { width: 24px; height: 24px; fill: currentColor; opacity: .9; }
+  .btn.pressed, .btn:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #1c2125, 0 2px 4px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.15);
+  }
+  .up    { grid-column: 2; grid-row: 1; }
+  .left  { grid-column: 1; grid-row: 2; }
+  .ok    { grid-column: 2; grid-row: 2; border-radius: 50%; }
+  .right { grid-column: 3; grid-row: 2; }
+  .down  { grid-column: 2; grid-row: 3; }
+  .side {
+    display: flex;
+    gap: 12px;
+  }
+  .pill {
+    width: 66px;
+    height: 24px;
+    border-radius: 12px;
+    font-size: 9.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    box-shadow: 0 3px 0 #1c2125, 0 4px 8px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.22);
+  }
+  .led {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #2a3328;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.6);
+  }
+  .led.on { background: var(--led-on); box-shadow: 0 0 6px var(--led-on); }
+  .hint {
+    max-width: 640px;
+    text-align: center;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--label);
+    margin: 0;
+  }
+  .hint kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    background: #2c343a;
+    border: 1px solid #434d55;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #d3dbe0;
+  }
+  .touch-hint { display: none; }
+  @media (pointer: coarse) {
+    .key-hint { display: none; }
+    .touch-hint { display: block; }
+  }
+  @media (pointer: coarse) and (max-height: 900px) {
+    .touch-hint { display: none; }
+  }
+  @media (orientation: landscape) and (max-height: 520px) {
+    body { flex-direction: row; padding: 10px; }
+    .device { flex-direction: row; padding: 16px 22px; gap: 26px; }
+    .controls { gap: 12px; }
+    .dpad { --k: 54px; }
+    .hint { display: none; }
+  }
+  @media (max-width: 519px) and (orientation: portrait) {
+    .device { padding: 10px 10px 14px; border-radius: 22px; gap: 14px; }
+    .bezel { padding: 8px 8px 6px; border-radius: 12px; }
+    .brand { margin-top: 6px; }
+  }
+</style>
+</head>
+<body>
+  <main class="device">
+    <div class="bezel">
+      <div class="screen" id="screen">
+        <canvas id="lcd" aria-label="Snake game screen"></canvas>
+      </div>
+      <div class="brand">Pocket Snake</div>
+    </div>
+
+    <div class="controls">
+      <div class="side">
+        <button class="btn pill" data-act="pause" tabindex="-1">PAUSE</button>
+        <button class="btn pill" data-act="sound" tabindex="-1"><span class="led" id="led"></span>SOUND</button>
+      </div>
+      <div class="dpad" id="dpad">
+        <button class="btn up" data-act="up" tabindex="-1" aria-label="Up">
+          <svg viewBox="0 0 20 20"><path d="M10 4l7 9H3z"/></svg></button>
+        <button class="btn left" data-act="left" tabindex="-1" aria-label="Left">
+          <svg viewBox="0 0 20 20"><path d="M4 10l9-7v14z"/></svg></button>
+        <button class="btn ok" data-act="ok" tabindex="-1" aria-label="OK">OK</button>
+        <button class="btn right" data-act="right" tabindex="-1" aria-label="Right">
+          <svg viewBox="0 0 20 20"><path d="M16 10l-9 7V3z"/></svg></button>
+        <button class="btn down" data-act="down" tabindex="-1" aria-label="Down">
+          <svg viewBox="0 0 20 20"><path d="M10 16L3 7h14z"/></svg></button>
+      </div>
+    </div>
+  </main>
+
+  <p class="hint key-hint">
+    Steer with <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>, <kbd>W A S D</kbd> or the keypad <kbd>2 4 6 8</kbd> ·
+    <kbd>Enter</kbd> / <kbd>5</kbd> = OK · <kbd>P</kbd> / <kbd>Space</kbd> = pause · <kbd>M</kbd> = sound
+  </p>
+  <p class="hint touch-hint">Swipe on the screen or use the pad. Tap the screen to select.</p>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // Geometry (all in LCD pixels)
+  // ---------------------------------------------------------------------------
+  // The board is 24x13 on wide screens; on portrait phones it becomes a
+  // taller 16-column board so every cell can be drawn bigger.
+  const CELL = 5;
+  const OX = 2, OY = 10;                 // play-field origin
+  let COLS = 24, ROWS = 13;
+  let W = COLS * CELL + 3;               // 123
+  let H = OY + ROWS * CELL + 1;          // 76
+
+  const INK = '#43523d';
+  const BG = '#c7f0d8';
+  const GHOST = 'rgba(67,82,61,0.07)';
+  const SHADOW = 'rgba(67,82,61,0.20)';
+
+  // Tick length per level (ms)
+  const SPEED = [0, 300, 240, 195, 160, 130, 105, 86, 70, 56];
+  const START_LEN = 5;
+  const CRITTER_LIFE = 40;               // moves
+  const FOODS_PER_CRITTER = 5;
+
+  // directions: 0 right, 1 down, 2 left, 3 up
+  const DX = [1, 0, -1, 0];
+  const DY = [0, 1, 0, -1];
+  const DIR_OF = { right: 0, down: 1, left: 2, up: 3 };
+
+  // ---------------------------------------------------------------------------
+  // 3x5 pixel font (variable width)
+  // ---------------------------------------------------------------------------
+  const FONT_SRC = {
+    'A': '010 101 111 101 101', 'B': '110 101 110 101 110', 'C': '011 100 100 100 011',
+    'D': '110 101 101 101 110', 'E': '111 100 110 100 111', 'F': '111 100 110 100 100',
+    'G': '011 100 101 101 011', 'H': '101 101 111 101 101', 'I': '111 010 010 010 111',
+    'J': '001 001 001 101 010', 'K': '101 101 110 101 101', 'L': '100 100 100 100 111',
+    'M': '10001 11011 10101 10001 10001', 'N': '1001 1101 1011 1001 1001',
+    'O': '010 101 101 101 010', 'P': '110 101 110 100 100', 'Q': '010 101 101 110 011',
+    'R': '110 101 110 101 101', 'S': '011 100 010 001 110', 'T': '111 010 010 010 010',
+    'U': '101 101 101 101 111', 'V': '101 101 101 101 010', 'W': '10001 10001 10101 11011 10001',
+    'X': '101 101 010 101 101', 'Y': '101 101 010 010 010', 'Z': '111 001 010 100 111',
+    '0': '111 101 101 101 111', '1': '010 110 010 010 111', '2': '110 001 010 100 111',
+    '3': '110 001 010 001 110', '4': '101 101 111 001 001', '5': '111 100 110 001 110',
+    '6': '011 100 111 101 111', '7': '111 001 010 010 010', '8': '111 101 111 101 111',
+    '9': '111 101 111 001 110', ' ': '00 00 00 00 00', '!': '1 1 1 0 1', '.': '0 0 0 0 1',
+    ':': '0 1 0 1 0', '-': '000 000 111 000 000', '<': '001 010 100 010 001',
+    '>': '100 010 001 010 100', '?': '110 001 010 000 010', '/': '001 001 010 100 100'
+  };
+  const FONT = {};
+  for (const k in FONT_SRC) FONT[k] = FONT_SRC[k].split(' ');
+
+  // ---------------------------------------------------------------------------
+  // Sprites (4x4 cells, defined facing right)
+  // ---------------------------------------------------------------------------
+  const HEAD_CLOSED = ['1110', '1101', '1111', '1110'];
+  const HEAD_OPEN   = ['1101', '1100', '1100', '1110'];
+  const TAIL        = ['0000', '0111', '0111', '0000'];
+  const BODY        = ['0110', '1111', '1111', '0110'];
+  const FULL        = ['1111', '1111', '1111', '1111'];
+  const FOOD        = ['0110', '1001', '1001', '0110'];
+
+  // Bonus critters: 9x4, span two cells
+  const CRITTERS = [
+    ['010000010', '001111100', '011111110', '101010101'], // beetle
+    ['001111001', '010111011', '011111111', '001111001'], // fish
+    ['000111000', '011111110', '110101011', '011111110'], // saucer
+    ['011000110', '111101111', '011111110', '001000100']  // bat
+  ];
+
+  function orient(rows, dir) {
+    const out = [];
+    for (let j = 0; j < 4; j++) {
+      let line = '';
+      for (let i = 0; i < 4; i++) {
+        let c;
+        if (dir === 0) c = rows[j][i];
+        else if (dir === 2) c = rows[j][3 - i];
+        else if (dir === 1) c = rows[i][j];
+        else c = rows[i][3 - j];
+        line += c;
+      }
+      out.push(line);
+    }
+    return out;
+  }
+  const HEADS = [0, 1, 2, 3].map(d => [orient(HEAD_CLOSED, d), orient(HEAD_OPEN, d)]);
+  const TAILS = [0, 1, 2, 3].map(d => orient(TAIL, d));
+
+  // ---------------------------------------------------------------------------
+  // Mazes (the board always wraps; walls decide where you can go)
+  // ---------------------------------------------------------------------------
+  function border(add, gapX, gapY) {
+    for (let x = 0; x < COLS; x++) {
+      if (gapX && gapX(x)) continue;
+      add(x, 0); add(x, ROWS - 1);
+    }
+    for (let y = 1; y < ROWS - 1; y++) {
+      if (gapY && gapY(y)) continue;
+      add(0, y); add(COLS - 1, y);
+    }
+  }
+  const MAZES = [
+    { name: 'NONE',    build() {} },
+    { name: 'BOX',     build(add) { border(add); } },
+    { name: 'TUNNEL',  build(add) {
+        const cx = COLS / 2, my = Math.floor(ROWS / 2);
+        border(add, x => x >= cx - 3 && x <= cx + 2, y => y >= my - 1 && y <= my + 1);
+      } },
+    { name: 'RAILS',   build(add) {
+        const r = Math.floor(ROWS / 4);
+        for (let x = 4; x <= COLS - 5; x++) { add(x, r); add(x, ROWS - 1 - r); }
+      } },
+    { name: 'PILLARS', build(add) {
+        border(add);
+        const ax = Math.floor(COLS / 4), bx = COLS - 2 - ax;
+        const ay = Math.floor(ROWS / 4), by = ROWS - 2 - ay;
+        for (const [px, py] of [[ax, ay], [bx, ay], [ax, by], [bx, by]]) {
+          add(px, py); add(px + 1, py); add(px, py + 1); add(px + 1, py + 1);
+        }
+      } }
+  ];
+  function buildMaze(i) {
+    const set = new Set();
+    MAZES[i].build((x, y) => set.add(y * COLS + x));
+    return set;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Persistence
+  // ---------------------------------------------------------------------------
+  const STORE_KEY = 'pocket-snake-v1';
+  const MAX_SCORES = 10;
+  const settings = { level: 5, maze: 1, sound: true };
+  let localScores = [];          // high scores kept in this browser
+  let initials = 'AAA';          // initials last entered on this device
+
+  // Accept only well-formed score entries (shared data is untrusted).
+  function cleanEntry(e) {
+    if (!e || typeof e !== 'object') return null;
+    const name = String(e.name || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+    const score = Math.floor(Number(e.score));
+    if (!name || !(score > 0) || score > 1e7) return null;
+    const level = Math.min(9, Math.max(1, Math.floor(Number(e.level)) || 1));
+    const maze = Math.min(MAZES.length - 1, Math.max(0, Math.floor(Number(e.maze)) || 0));
+    return { name, score, level, maze, at: Number(e.at) || 0 };
+  }
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (saved) {
+      if (saved.level >= 1 && saved.level <= 9) settings.level = saved.level | 0;
+      if (saved.maze >= 0 && saved.maze < MAZES.length) settings.maze = saved.maze | 0;
+      if (typeof saved.sound === 'boolean') settings.sound = saved.sound;
+      if (Array.isArray(saved.scores)) localScores = saved.scores.map(cleanEntry).filter(Boolean).slice(0, MAX_SCORES);
+      if (typeof saved.initials === 'string' && /^[A-Z]{3}$/.test(saved.initials)) initials = saved.initials;
+    }
+  } catch (e) { /* storage unavailable */ }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...settings, scores: localScores, initials })); } catch (e) {}
+  }
+
+  // ---------------------------------------------------------------------------
+  // High-score table. On the published page the scores live in the page's
+  // shared data store, so every player sees the same table. Opened as a plain
+  // file (or by someone who can't save there) the table stays in this browser.
+  // ---------------------------------------------------------------------------
+  let sharedScores = [];
+  let scoresRef = null;          // the shared "scores" collection, when usable
+
+  const byScore = (a, b) => b.score - a.score || a.at - b.at;
+  function topScores() {
+    return sharedScores.concat(localScores).sort(byScore).slice(0, MAX_SCORES);
+  }
+  function qualifies(s) {
+    const top = topScores();
+    return s > 0 && (top.length < MAX_SCORES || s > top[top.length - 1].score);
+  }
+  const rankOf = s => topScores().filter(e => e.score >= s).length + 1;
+  const bestEntry = () => topScores()[0] || null;
+
+  (async () => {
+    if (!window.claude || typeof window.claude.use !== 'function') return;
+    let db = null;
+    try { db = await window.claude.use('db'); } catch (e) { db = null; }
+    if (!db) return;
+    const ref = db.collection('scores');
+    scoresRef = ref;
+    ref.orderBy('score', 'desc').limit(MAX_SCORES).onSnapshot(
+      snap => { sharedScores = snap.docs.map(d => cleanEntry(d.data())).filter(Boolean); },
+      () => { scoresRef = null; }
+    );
+  })();
+
+  function keepLocally(entry) {
+    localScores = localScores.concat(entry).sort(byScore).slice(0, MAX_SCORES);
+    save();
+  }
+
+  async function saveScore(entry) {
+    const ref = scoresRef;
+    if (!ref) return keepLocally(entry);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await ref.add(entry);
+        pruneShared(ref);
+        return;
+      } catch (e) {
+        if (e && e.code === 'unavailable' && attempt === 0) {
+          await new Promise(r => setTimeout(r, 600 + Math.random() * 600));
+          continue;
+        }
+        break;
+      }
+    }
+    // This viewer can read the shared table but not write to it.
+    scoresRef = null;
+    keepLocally(entry);
+  }
+
+  // Keep the shared collection to the top 10 so it never grows.
+  async function pruneShared(ref) {
+    try {
+      const snap = await ref.orderBy('score', 'desc').limit(50).get();
+      for (const d of snap.docs.slice(MAX_SCORES)) await ref.doc(d.id).delete();
+    } catch (e) { /* not critical */ }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sound (tiny square-wave beeper)
+  // ---------------------------------------------------------------------------
+  let actx = null;
+  function unlockAudio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+    }
+    if (actx && actx.state === 'suspended') actx.resume();
+  }
+  function tone(freq, dur, delay = 0, vol = 0.05, endFreq) {
+    if (!settings.sound || !actx) return;
+    const t = actx.currentTime + delay;
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(freq, t);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(actx.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+  const sfx = {
+    move:  () => tone(1400, 0.025, 0, 0.025),
+    eat:   () => tone(1046, 0.05, 0, 0.05),
+    spawn: () => { tone(1568, 0.03, 0, 0.03); tone(1568, 0.03, 0.06, 0.03); },
+    bonus: () => { tone(784, 0.06); tone(1175, 0.06, 0.07); tone(1568, 0.1, 0.14); },
+    die:   () => tone(520, 0.6, 0, 0.06, 70),
+    start: () => { tone(523, 0.06); tone(659, 0.06, 0.07); tone(784, 0.11, 0.14); }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Frame buffer + drawing primitives
+  // ---------------------------------------------------------------------------
+  let fb = new Uint8Array(W * H);
+  function setGrid(cols, rows) {
+    if (cols === COLS && rows === ROWS) return;
+    COLS = cols; ROWS = rows;
+    W = COLS * CELL + 3;
+    H = OY + ROWS * CELL + 1;
+    fb = new Uint8Array(W * H);
+  }
+  const clear = () => fb.fill(0);
+  function px(x, y, v = 1) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    fb[y * W + x] = v;
+  }
+  function rect(x, y, w, h, v = 1) {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, v);
+  }
+  function box(x, y, w, h, v = 1) {
+    rect(x, y, w, 1, v); rect(x, y + h - 1, w, 1, v);
+    rect(x, y, 1, h, v); rect(x + w - 1, y, 1, h, v);
+  }
+  function bmp(rows, x, y, v = 1) {
+    for (let j = 0; j < rows.length; j++)
+      for (let i = 0; i < rows[j].length; i++)
+        if (rows[j][i] === '1') px(x + i, y + j, v);
+  }
+  function measure(str, s = 1) {
+    let w = 0;
+    for (const ch of str) w += ((FONT[ch] || FONT['?'])[0].length + 1) * s;
+    return Math.max(0, w - s);
+  }
+  function text(str, x, y, v = 1, s = 1) {
+    for (const ch of str) {
+      const g = FONT[ch] || FONT['?'];
+      for (let j = 0; j < 5; j++)
+        for (let i = 0; i < g[j].length; i++)
+          if (g[j][i] === '1') rect(x + i * s, y + j * s, s, s, v);
+      x += (g[0].length + 1) * s;
+    }
+  }
+  const center = (str, y, v = 1, s = 1) => text(str, Math.floor((W - measure(str, s)) / 2), y, v, s);
+  const pad = (n, len = 4) => String(n).padStart(len, '0');
+  const cellX = x => OX + x * CELL;
+  const cellY = y => OY + y * CELL;
+
+  // ---------------------------------------------------------------------------
+  // Canvas rendering (dot-matrix LCD look)
+  // ---------------------------------------------------------------------------
+  const canvas = document.getElementById('lcd');
+  const ctx = canvas.getContext('2d');
+  const screenEl = document.getElementById('screen');
+  let unit = 4, dot = 4, shadowOff = 1;
+  let ghost = document.createElement('canvas');
+
+  function layout() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const landscape = window.matchMedia('(orientation: landscape) and (max-height: 520px)').matches;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const compact = vw < 520;
+    let availW, availH;
+    if (landscape) {
+      availW = vw - 20 - 44 - 28 - 26 - 200;
+      availH = vh - 20 - 32 - 24 - 24;
+    } else {
+      availW = compact ? vw - 32 - 20 - 16 : Math.min(vw - 32 - 36 - 28, 760);
+      // Everything on the page except the LCD itself, measured.
+      let chrome = 32 + 4;
+      for (const h of document.querySelectorAll('.hint')) if (h.offsetParent) chrome += h.offsetHeight + 18;
+      chrome += document.querySelector('.device').offsetHeight - canvas.offsetHeight;
+      availH = vh - chrome;
+    }
+    // Pick the board shape only when no game is on the board.
+    const active = state === 'playing' || state === 'paused' || state === 'dying';
+    if (!active) {
+      let cols = 24, rows = 13;
+      if (!landscape && vh > vw * 1.15 && vw < 700) {
+        cols = 16;
+        const s0 = availW / (cols * CELL + 3);
+        rows = Math.floor((availH / s0 - OY - 1) / CELL);
+        rows = Math.max(13, Math.min(26, rows));
+      }
+      setGrid(cols, rows);
+    }
+    let s = Math.min(availW / W, availH / H);
+    s = Math.max(s, 1.6);
+    unit = Math.max(2, Math.floor(s * dpr));
+    const gap = unit >= 4 ? Math.max(1, Math.round(unit * 0.12)) : 0;
+    dot = unit - gap;
+    shadowOff = Math.max(1, Math.round(unit * 0.16));
+    canvas.width = W * unit;
+    canvas.height = H * unit;
+    canvas.style.width = (W * unit / dpr) + 'px';
+    canvas.style.height = (H * unit / dpr) + 'px';
+
+    ghost.width = canvas.width;
+    ghost.height = canvas.height;
+    const g = ghost.getContext('2d');
+    g.fillStyle = GHOST;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) g.fillRect(x * unit, y * unit, dot, dot);
+  }
+
+  function present() {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(ghost, 0, 0);
+    ctx.fillStyle = SHADOW;
+    for (let y = 0, i = 0; y < H; y++)
+      for (let x = 0; x < W; x++, i++)
+        if (fb[i]) ctx.fillRect(x * unit + shadowOff, y * unit + shadowOff, dot, dot);
+    ctx.fillStyle = INK;
+    for (let y = 0, i = 0; y < H; y++)
+      for (let x = 0; x < W; x++, i++)
+        if (fb[i]) ctx.fillRect(x * unit, y * unit, dot, dot);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Game state
+  // ---------------------------------------------------------------------------
+  let state = 'menu';          // menu | playing | paused | dying | over
+  let menuSel = 0;
+  let overSel = 0;
+  let stateT = 0;              // ms spent in current state
+  let snake = [], dir = 0, queue = [];
+  let walls = new Set();
+  let food = null, critter = null;
+  let score = 0, eaten = 0, acc = 0;
+  let newBest = false, won = false;
+
+  function setState(s) {
+    state = s; stateT = 0;
+    if (s === 'menu') layout();
+  }
+
+  function occupied(x, y) {
+    if (walls.has(y * COLS + x)) return true;
+    if (food && food.x === x && food.y === y) return true;
+    if (critter && critter.y === y && (critter.x === x || critter.x + 1 === x)) return true;
+    for (const s of snake) if (s.x === x && s.y === y) return true;
+    return false;
+  }
+
+  function placeFood() {
+    food = null;
+    const free = [];
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (!occupied(x, y)) free.push({ x, y });
+    if (!free.length) return false;
+    food = free[Math.floor(Math.random() * free.length)];
+    return true;
+  }
+
+  function spawnCritter() {
+    const spots = [];
+    for (let y = 0; y < ROWS; y++)
+      for (let x = 0; x < COLS - 1; x++)
+        if (!occupied(x, y) && !occupied(x + 1, y)) spots.push({ x, y });
+    if (!spots.length) return;
+    const s = spots[Math.floor(Math.random() * spots.length)];
+    critter = { x: s.x, y: s.y, type: Math.floor(Math.random() * CRITTERS.length), life: CRITTER_LIFE };
+    sfx.spawn();
+  }
+
+  function newGame() {
+    layout();
+    walls = buildMaze(settings.maze);
+    snake = [];
+    const sy = Math.floor(ROWS / 2);
+    for (let i = 0; i < START_LEN; i++) snake.push({ x: 9 - i, y: sy, full: false });
+    dir = 0;
+    queue = [];
+    score = 0; eaten = 0; acc = 0;
+    critter = null;
+    newBest = false; won = false;
+    placeFood();
+    setState('playing');
+    sfx.start();
+  }
+
+  function turn(d) {
+    const last = queue.length ? queue[queue.length - 1] : dir;
+    if (d === last || d === (last + 2) % 4) return;
+    if (queue.length < 3) queue.push(d);
+  }
+
+  function step() {
+    if (queue.length) dir = queue.shift();
+    const head = snake[0];
+    const nx = (head.x + DX[dir] + COLS) % COLS;
+    const ny = (head.y + DY[dir] + ROWS) % ROWS;
+    const tail = snake[snake.length - 1];
+    const growing = tail.full;   // the swallowed food has reached the tail
+
+    if (walls.has(ny * COLS + nx)) return die();
+    const checkLen = snake.length - (growing ? 0 : 1);
+    for (let i = 0; i < checkLen; i++) if (snake[i].x === nx && snake[i].y === ny) return die();
+
+    const ateFood = food && food.x === nx && food.y === ny;
+    const ateCritter = critter && critter.y === ny && (critter.x === nx || critter.x + 1 === nx);
+
+    snake.unshift({ x: nx, y: ny, full: !!(ateFood || ateCritter) });
+    if (growing) tail.full = false; else snake.pop();
+
+    if (ateCritter) {
+      score += 5 * settings.level + Math.ceil(critter.life / 2);
+      critter = null;
+      sfx.bonus();
+    }
+    if (ateFood) {
+      score += settings.level;
+      eaten++;
+      sfx.eat();
+      if (!placeFood()) { won = true; return die(true); }
+      if (eaten % FOODS_PER_CRITTER === 0 && !critter) spawnCritter();
+    }
+    if (critter && --critter.life <= 0) critter = null;
+  }
+
+  function die(victory = false) {
+    const top = bestEntry();
+    newBest = score > 0 && (!top || score > top.score);
+    if (victory) { finishGame(); return; }
+    setState('dying');
+    sfx.die();
+  }
+
+  // After the death animation: ask for initials if the score makes the table.
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let entryName = ['A', 'A', 'A'], entryPos = 0, entryRank = 0;
+  function finishGame() {
+    overSel = 0;
+    if (qualifies(score)) {
+      entryName = initials.split('');
+      entryPos = 0;
+      entryRank = rankOf(score);
+      setState('entry');
+      sfx.bonus();
+    } else {
+      setState('over');
+    }
+  }
+  function submitEntry() {
+    initials = entryName.join('');
+    save();
+    saveScore({ name: initials, score, level: settings.level, maze: settings.maze, at: Date.now() });
+    sfx.start();
+    setState('over');
+  }
+  function typeLetter(ch) {
+    if (stateT < 300) return;
+    entryName[entryPos] = ch;
+    if (entryPos < 2) entryPos++;
+    sfx.move();
+  }
+
+  function pause() { if (state === 'playing') { setState('paused'); } }
+  function resume() { if (state === 'paused') { setState('playing'); acc = 0; } }
+
+  // ---------------------------------------------------------------------------
+  // Input
+  // ---------------------------------------------------------------------------
+  const led = document.getElementById('led');
+  function setSound(on) {
+    settings.sound = on;
+    led.classList.toggle('on', on);
+    save();
+    if (on) sfx.move();
+  }
+  led.classList.toggle('on', settings.sound);
+
+  const MENU_ITEMS = ['START', 'LEVEL', 'MAZE', 'SCORES', 'SOUND'];
+
+  function menuInput(a) {
+    if (a === 'up' || a === 'down') {
+      menuSel = (menuSel + (a === 'up' ? -1 : 1) + MENU_ITEMS.length) % MENU_ITEMS.length;
+      sfx.move();
+      return;
+    }
+    const delta = a === 'left' ? -1 : (a === 'right' || a === 'ok') ? 1 : 0;
+    if (!delta) return;
+    switch (menuSel) {
+      case 0: if (a === 'ok') newGame(); break;
+      case 1: settings.level = ((settings.level - 1 + delta + 9) % 9) + 1; save(); sfx.move(); break;
+      case 2: settings.maze = (settings.maze + delta + MAZES.length) % MAZES.length; save(); sfx.move(); break;
+      case 3: if (a === 'ok' || a === 'right') { setState('scores'); sfx.move(); } break;
+      case 4: setSound(!settings.sound); break;
+    }
+  }
+
+  function entryInput(a) {
+    if (stateT < 300) return;
+    if (a === 'up' || a === 'down') {
+      const i = LETTERS.indexOf(entryName[entryPos]);
+      entryName[entryPos] = LETTERS[(i + (a === 'up' ? 1 : -1) + 26) % 26];
+      sfx.move();
+    } else if (a === 'left' || a === 'right') {
+      entryPos = Math.max(0, Math.min(2, entryPos + (a === 'left' ? -1 : 1)));
+      sfx.move();
+    } else if (a === 'ok') {
+      submitEntry();
+    } else if (a === 'pause') {
+      setState('over');          // skip saving
+    }
+  }
+
+  function overInput(a) {
+    if (stateT < 500) return;
+    if (a === 'up' || a === 'down') { overSel ^= 1; sfx.move(); return; }
+    if (a === 'pause') { setState('menu'); return; }
+    if (a === 'ok') { if (overSel === 0) newGame(); else setState('menu'); }
+  }
+
+  function input(a) {
+    unlockAudio();
+    if (a === 'sound') { setSound(!settings.sound); return; }
+    switch (state) {
+      case 'menu': menuInput(a); break;
+      case 'playing':
+        if (a in DIR_OF) turn(DIR_OF[a]);
+        else if (a === 'pause' || a === 'ok') pause();
+        break;
+      case 'paused':
+        if (a in DIR_OF) { resume(); turn(DIR_OF[a]); }
+        else if (a === 'pause' || a === 'ok') resume();
+        break;
+      case 'over': overInput(a); break;
+      case 'entry': entryInput(a); break;
+      case 'scores':
+        if (a === 'ok' || a === 'pause' || a === 'left') { setState('menu'); sfx.move(); }
+        break;
+    }
+  }
+
+  const KEYMAP = {
+    arrowup: 'up', w: 'up', '2': 'up',
+    arrowdown: 'down', s: 'down', '8': 'down',
+    arrowleft: 'left', a: 'left', '4': 'left',
+    arrowright: 'right', d: 'right', '6': 'right',
+    enter: 'ok', '5': 'ok', ' ': 'ok',
+    p: 'pause', escape: 'pause',
+    m: 'sound'
+  };
+  const buttons = {};
+  document.querySelectorAll('[data-act]').forEach(b => {
+    const act = b.dataset.act;
+    buttons[act] = b;
+    if (b.closest('.dpad')) return;          // handled by the pad zone below
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      b.classList.add('pressed');
+      input(act);
+    });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel'])
+      b.addEventListener(ev, () => b.classList.remove('pressed'));
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  });
+  const dpad = document.getElementById('dpad');
+  let padPointer = null, padAct = null;
+  function padActionAt(e) {
+    const r = dpad.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2);
+    const dy = e.clientY - (r.top + r.height / 2);
+    if (Math.hypot(dx, dy) < r.width * 0.17) return 'ok';
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+  }
+  function padPress(act) {
+    if (padAct) buttons[padAct].classList.remove('pressed');
+    padAct = act;
+    if (act) { buttons[act].classList.add('pressed'); input(act); }
+  }
+  dpad.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (padPointer !== null) return;
+    padPointer = e.pointerId;
+    try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
+    padPress(padActionAt(e));
+  });
+  // Sliding the thumb to another direction turns without lifting it.
+  dpad.addEventListener('pointermove', e => {
+    if (e.pointerId !== padPointer) return;
+    const act = padActionAt(e);
+    if (act !== padAct && act !== 'ok') padPress(act);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'])
+    dpad.addEventListener(ev, e => {
+      if (e.pointerId !== padPointer) return;
+      padPointer = null;
+      padPress(null);
+    });
+  dpad.addEventListener('contextmenu', e => e.preventDefault());
+
+  function flash(act) {
+    const b = buttons[act];
+    if (!b) return;
+    b.classList.add('pressed');
+    clearTimeout(b._t);
+    b._t = setTimeout(() => b.classList.remove('pressed'), 110);
+  }
+
+  window.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (state === 'entry') {
+      if (/^[a-z]$/i.test(e.key)) { e.preventDefault(); typeLetter(e.key.toUpperCase()); return; }
+      if (e.key === 'Backspace') { e.preventDefault(); entryPos = Math.max(0, entryPos - 1); return; }
+    }
+    let act = KEYMAP[e.key.toLowerCase()];
+    if (!act) return;
+    e.preventDefault();
+    if (e.repeat && (act === 'ok' || act === 'pause' || act === 'sound')) return;
+    if (e.key === ' ' && state === 'playing') act = 'pause';
+    flash(act);
+    input(act);
+  });
+
+  // Swipe / tap on the screen
+  let swipe = null;
+  screenEl.addEventListener('pointerdown', e => {
+    swipe = { x: e.clientX, y: e.clientY, moved: false };
+    try { screenEl.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  screenEl.addEventListener('pointermove', e => {
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    if (Math.hypot(dx, dy) < 22) return;
+    const act = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    input(act);
+    swipe = { x: e.clientX, y: e.clientY, moved: true };
+  });
+  const endSwipe = () => {
+    if (swipe && !swipe.moved && state !== 'playing') input('ok');
+    swipe = null;
+  };
+  screenEl.addEventListener('pointerup', endSwipe);
+  screenEl.addEventListener('pointercancel', () => { swipe = null; });
+
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  window.addEventListener('blur', pause);
+  window.addEventListener('resize', layout);
+
+  // ---------------------------------------------------------------------------
+  // Screens
+  // ---------------------------------------------------------------------------
+  function drawWalls() {
+    for (const k of walls) {
+      const x = k % COLS, y = (k / COLS) | 0;
+      const cx = cellX(x), cy = cellY(y);
+      rect(cx, cy, 4, 4);
+      const r = x + 1 < COLS && walls.has(k + 1);
+      const d = y + 1 < ROWS && walls.has(k + COLS);
+      if (r) rect(cx + 4, cy, 1, 4);
+      if (d) rect(cx, cy + 4, 4, 1);
+      if (r && d && walls.has(k + COLS + 1)) px(cx + 4, cy + 4);
+    }
+  }
+
+  function dirBetween(a, b) {
+    let dx = b.x - a.x, dy = b.y - a.y;
+    if (dx > 1) dx = -1; else if (dx < -1) dx = 1;
+    if (dy > 1) dy = -1; else if (dy < -1) dy = 1;
+    return dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
+  }
+
+  function mouthOpen() {
+    const d = queue.length ? queue[0] : dir;
+    let x = snake[0].x, y = snake[0].y;
+    for (let i = 0; i < 2; i++) {
+      x = (x + DX[d] + COLS) % COLS;
+      y = (y + DY[d] + ROWS) % ROWS;
+      if (food && food.x === x && food.y === y) return true;
+      if (critter && critter.y === y && (critter.x === x || critter.x + 1 === x)) return true;
+      if (walls.has(y * COLS + x)) return false;
+    }
+    return false;
+  }
+
+  function drawSnake() {
+    const n = snake.length;
+    // connectors between neighbouring segments (skipped across the wrap seam)
+    for (let i = 0; i < n - 1; i++) {
+      const a = snake[i], b = snake[i + 1];
+      const thick = a.full || b.full || i === 0;
+      if (a.y === b.y && Math.abs(a.x - b.x) === 1) {
+        const gx = cellX(Math.max(a.x, b.x)) - 1, gy = cellY(a.y);
+        thick ? rect(gx, gy, 1, 4) : rect(gx, gy + 1, 1, 2);
+      } else if (a.x === b.x && Math.abs(a.y - b.y) === 1) {
+        const gx = cellX(a.x), gy = cellY(Math.max(a.y, b.y)) - 1;
+        thick ? rect(gx, gy, 4, 1) : rect(gx + 1, gy, 2, 1);
+      }
+    }
+    const open = mouthOpen() ? 1 : 0;
+    for (let i = n - 1; i >= 0; i--) {
+      const s = snake[i];
+      const cx = cellX(s.x), cy = cellY(s.y);
+      if (i === 0) bmp(HEADS[dir][open], cx, cy);
+      else if (i === n - 1 && !s.full) bmp(TAILS[dirBetween(s, snake[i - 1])], cx, cy);
+      else bmp(s.full ? FULL : BODY, cx, cy);
+    }
+  }
+
+  function drawStatus(t) {
+    text(pad(score), 1, 1);
+    if (critter) {
+      const remain = pad(Math.ceil(critter.life / 2), 2);
+      const tw = measure(remain);
+      text(remain, W - 1 - tw, 1);
+      bmp(CRITTERS[critter.type], W - 1 - tw - 3 - 9, 1);
+    }
+  }
+
+  function drawPlay(t) {
+    clear();
+    drawStatus(t);
+    box(0, 8, W, H - 8);
+    drawWalls();
+    if (food) bmp(FOOD, cellX(food.x), cellY(food.y));
+    if (critter) {
+      const blinking = critter.life <= 10 && Math.floor(t / 150) % 2 === 1;
+      if (!blinking) bmp(CRITTERS[critter.type], cellX(critter.x), cellY(critter.y));
+    }
+    const hidden = state === 'dying' && Math.floor(stateT / 170) % 2 === 1;
+    if (!hidden) drawSnake();
+
+    if (state === 'paused') {
+      const bw = 54, bh = 17;
+      const bx = Math.floor((W - bw) / 2), by = Math.floor(OY + (ROWS * CELL - bh) / 2);
+      rect(bx - 2, by - 2, bw + 4, bh + 4, 0);
+      box(bx, by, bw, bh);
+      box(bx + 2, by + 2, bw - 4, bh - 4);
+      center('PAUSED', by + 6);
+    }
+  }
+
+  function drawMenu(t) {
+    clear();
+    const oy = Math.max(0, Math.floor((H - 76) / 2));
+    center('SNAKE', 3 + oy, 1, 2);
+    const titleW = measure('SNAKE', 2);
+    const tx = Math.floor((W - titleW) / 2);
+    const frameN = Math.floor(t / 600) % CRITTERS.length;
+    bmp(CRITTERS[frameN], tx - 15, 6 + oy);
+    bmp(CRITTERS[(frameN + 2) % CRITTERS.length], tx + titleW + 6, 6 + oy);
+
+    const values = ['', String(settings.level), MAZES[settings.maze].name, '', settings.sound ? 'ON' : 'OFF'];
+    for (let i = 0; i < MENU_ITEMS.length; i++) {
+      const y = 20 + i * 9 + oy;
+      const sel = i === menuSel;
+      if (sel) rect(4, y - 2, W - 8, 9, 1);
+      const v = sel ? 0 : 1;
+      text(MENU_ITEMS[i], 8, y, v);
+      if (values[i]) {
+        const s = sel ? '< ' + values[i] + ' >' : values[i];
+        text(s, W - 8 - measure(s), y, v);
+      } else if (sel && Math.floor(t / 400) % 2 === 0) {
+        text('>', W - 8 - measure('>'), y, v);
+      }
+    }
+    rect(4, 64 + oy, W - 8, 1, 1);
+    center(bestLine(), 68 + oy);
+  }
+
+  function bestLine() {
+    const b = bestEntry();
+    return b ? 'BEST ' + b.name + ' ' + pad(b.score) : 'BEST 0000';
+  }
+
+  function drawEntry(t) {
+    clear();
+    const oy = Math.max(0, Math.floor((H - 76) / 2));
+    center('HIGH SCORE!', 3 + oy);
+    center('SCORE ' + pad(score), 12 + oy);
+    center('RANK ' + entryRank, 20 + oy);
+    const slot = 12, x0 = Math.floor(W / 2) - 18;
+    for (let i = 0; i < 3; i++) {
+      const ch = entryName[i], sx = x0 + i * slot;
+      text(ch, sx + Math.floor((slot - measure(ch, 2)) / 2), 30 + oy, 1, 2);
+      if (i === entryPos && Math.floor(t / 300) % 2 === 0) rect(sx + 1, 42 + oy, slot - 2, 2);
+    }
+    center('ENTER INITIALS', 52 + oy);
+    center('OK TO SAVE', 61 + oy);
+  }
+
+  function drawScores(t) {
+    clear();
+    const oy = Math.max(0, Math.floor((H - 76) / 2));
+    const list = topScores();
+    center('HIGH SCORES', 2 + oy);
+    rect(4, 9 + oy, W - 8, 1, 1);
+    if (!list.length) {
+      center('NO SCORES YET', 32 + oy);
+      center('PLAY A GAME!', 41 + oy);
+      return;
+    }
+    list.forEach((e, i) => {
+      const y = 13 + i * 6 + oy;
+      const rank = String(i + 1);
+      text(rank, 14 - measure(rank), y);
+      text(e.name, 18, y);
+      if (W > 100) text('L' + e.level + ' ' + MAZES[e.maze].name, 40, y);
+      const s = pad(e.score);
+      text(s, W - 6 - measure(s), y);
+    });
+  }
+
+  function drawOver(t) {
+    clear();
+    const oy = Math.max(0, Math.floor((H - 76) / 2));
+    center(won ? 'YOU WIN!' : 'GAME OVER', 4 + oy, 1, 2);
+    center('SCORE ' + pad(score), 22 + oy);
+    if (newBest) { if (Math.floor(t / 350) % 2 === 0) center('NEW BEST!', 31 + oy); }
+    else center(bestLine(), 31 + oy);
+    const items = ['PLAY AGAIN', 'MENU'];
+    const inset = W > 100 ? 20 : 8;
+    for (let i = 0; i < items.length; i++) {
+      const y = 49 + i * 10 + oy;
+      const sel = i === overSel;
+      if (sel) rect(inset, y - 2, W - 2 * inset, 9, 1);
+      center(items[i], y, sel ? 0 : 1);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main loop
+  // ---------------------------------------------------------------------------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(now - last, 250);
+    last = now;
+    stateT += dt;
+
+    if (state === 'playing') {
+      acc += dt;
+      const iv = SPEED[settings.level];
+      while (acc >= iv && state === 'playing') { acc -= iv; step(); }
+    } else if (state === 'dying' && stateT > 1400) {
+      finishGame();
+    }
+
+    if (state === 'menu') drawMenu(now);
+    else if (state === 'over') drawOver(now);
+    else if (state === 'entry') drawEntry(now);
+    else if (state === 'scores') drawScores(now);
+    else drawPlay(now);
+    present();
+    requestAnimationFrame(frame);
+  }
+
+  layout();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
