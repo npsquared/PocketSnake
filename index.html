@@ -23,7 +23,7 @@
     --led-on: #9dff7a;
   }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
   body {
     background: radial-gradient(ellipse at 50% 30%, var(--page-glow), var(--page) 70%) fixed, var(--page);
     color: var(--label);
@@ -40,6 +40,7 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
   }
   .device {
     background: linear-gradient(160deg, var(--shell-hi), var(--shell) 38%, var(--shell-lo));
@@ -496,6 +497,16 @@
     start: () => { tone(523, 0.06); tone(659, 0.06, 0.07); tone(784, 0.11, 0.14); }
   };
 
+  // Short haptic buzzes on phones that support it (no-op elsewhere).
+  function buzz(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+  }
+  const haptics = {
+    eat:    () => buzz(15),
+    critter: () => buzz([20, 40, 20]),
+    die:    () => buzz([60, 50, 140])
+  };
+
   // ---------------------------------------------------------------------------
   // Frame buffer + drawing primitives
   // ---------------------------------------------------------------------------
@@ -616,6 +627,7 @@
   // ---------------------------------------------------------------------------
   // Game state
   // ---------------------------------------------------------------------------
+  let held = false, holdTimer = 0;   // brief focus-loss hold, see hold()
   let state = 'menu';          // menu | playing | paused | dying | over
   let menuSel = 0;
   let overSel = 0;
@@ -628,6 +640,7 @@
 
   function setState(s) {
     state = s; stateT = 0;
+    if (s !== 'playing') release();
     if (s === 'menu') layout();
   }
 
@@ -703,11 +716,13 @@
       score += 5 * settings.level + Math.ceil(critter.life / 2);
       critter = null;
       sfx.bonus();
+      haptics.critter();
     }
     if (ateFood) {
       score += settings.level;
       eaten++;
       sfx.eat();
+      haptics.eat();
       if (!placeFood()) { won = true; return die(true); }
       if (eaten % FOODS_PER_CRITTER === 0 && !critter) spawnCritter();
     }
@@ -720,6 +735,7 @@
     if (victory) { finishGame(); return; }
     setState('dying');
     sfx.die();
+    haptics.die();
   }
 
   // After the death animation: ask for initials if the score makes the table.
@@ -913,6 +929,7 @@
   // Swipe / tap on the screen
   let swipe = null;
   screenEl.addEventListener('pointerdown', e => {
+    e.preventDefault();
     swipe = { x: e.clientX, y: e.clientY, moved: false };
     try { screenEl.setPointerCapture(e.pointerId); } catch (err) {}
   });
@@ -931,8 +948,31 @@
   screenEl.addEventListener('pointerup', endSwipe);
   screenEl.addEventListener('pointercancel', () => { swipe = null; });
 
-  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
-  window.addEventListener('blur', pause);
+  // Belt and braces for browsers that ignore touch-action (older iOS Safari):
+  // touches that start on the board or the pad never scroll or zoom the page.
+  for (const el of [screenEl, dpad]) {
+    el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+    el.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  }
+
+  // Focus loss: a hidden tab pauses at once. A plain blur (notification shade,
+  // a system dialog, a click outside the window) only holds the game still,
+  // and becomes a real pause if focus hasn't come back within a moment.
+  const BLUR_GRACE = 3000;   // ms
+  function hold() {
+    if (state !== 'playing' || held) return;
+    held = true;
+    holdTimer = setTimeout(() => { held = false; pause(); }, BLUR_GRACE);
+  }
+  function release() {
+    clearTimeout(holdTimer);
+    if (held) { held = false; acc = 0; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { release(); pause(); }
+  });
+  window.addEventListener('blur', hold);
+  window.addEventListener('focus', release);
   window.addEventListener('resize', layout);
 
   // ---------------------------------------------------------------------------
@@ -1125,7 +1165,7 @@
     last = now;
     stateT += dt;
 
-    if (state === 'playing') {
+    if (state === 'playing' && !held) {
       acc += dt;
       const iv = SPEED[settings.level];
       while (acc >= iv && state === 'playing') { acc -= iv; step(); }
